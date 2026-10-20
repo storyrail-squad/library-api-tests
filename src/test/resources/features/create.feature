@@ -43,8 +43,7 @@ Feature: Add a book
         | <field> | <value> |
       Then the response status is 201
       And the response is a Book matching the contract
-      And the response book has:
-        | <field> | <value> |
+      And the response book has the fields I sent and is available
 
       Examples:
         | case                         | field         | value              |
