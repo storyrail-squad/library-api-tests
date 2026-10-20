@@ -1,0 +1,126 @@
+name: API tests CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md"]
+  pull_request:
+    paths-ignore: ["**.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  BACKEND_REPO: ${{ vars.BACKEND_REPO || 'storyrail-squad/library-backend' }}
+
+jobs:
+  backend:
+    name: Build the backend under test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      ref: ${{ steps.ref.outputs.ref }}
+    steps:
+      # A story branch in this repo runs against the backend branch with the same name, if one exists,
+      # so new scenarios are tested against the new backend code. Otherwise: the backend's main.
+      - name: Pick the backend branch
+        id: ref
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          if [ "$BRANCH" != "main" ] && git ls-remote --exit-code --heads "https://github.com/$BACKEND_REPO.git" "$BRANCH" > /dev/null; then
+            ref="$BRANCH"
+          else
+            ref=main
+          fi
+          echo "Testing against $BACKEND_REPO@$ref"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: ${{ env.BACKEND_REPO }}
+          ref: ${{ steps.ref.outputs.ref }}
+          persist-credentials: false
+
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: pom.xml
+
+      - name: Package the jar
+        run: mvn -B -ntp -q package -DskipTests
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: backend-jar
+          path: target/library-backend.jar
+          retention-days: 3
+
+  contract:
+    name: Contract matches the backend's
+    needs: backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Compare contract/openapi.yaml with the backend's
+        env:
+          REF: ${{ needs.backend.outputs.ref }}
+        run: |
+          set -euo pipefail
+          url="https://raw.githubusercontent.com/$BACKEND_REPO/$REF/docs/api/openapi.yaml"
+          curl -fsSL --max-time 30 "$url" -o "$RUNNER_TEMP/backend-openapi.yaml"
+          if ! diff -u contract/openapi.yaml "$RUNNER_TEMP/backend-openapi.yaml"; then
+            echo "::error title=Contract out of date::contract/openapi.yaml differs from $BACKEND_REPO@$REF. Copy the backend's docs/api/openapi.yaml here."
+            exit 1
+          fi
+          echo "Contract matches $BACKEND_REPO@$REF"
+
+  isolated:
+    name: Isolated run (local jar)
+    needs: backend
+    uses: ./.github/workflows/run-suite.yml # zizmor: ignore[self-repository]
+    with:
+      base-url: http://localhost:8080
+      jar-artifact: backend-jar
+      tests-ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      report-name: api-tests-isolated
+
+  qa-config:
+    name: QA target
+    if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      url: ${{ steps.url.outputs.url }}
+    steps:
+      - name: Read QA_API_URL
+        id: url
+        env:
+          QA_API_URL: ${{ vars.QA_API_URL }}
+        run: |
+          if [ -z "$QA_API_URL" ]; then
+            echo "::notice::Repository variable QA_API_URL is not set; skipping the QA run (no backend QA environment yet)."
+          fi
+          echo "url=$QA_API_URL" >> "$GITHUB_OUTPUT"
+
+  qa:
+    name: QA run (deployed API, @qa)
+    needs: [isolated, qa-config]
+    if: ${{ needs.qa-config.outputs.url != '' }}
+    uses: ./.github/workflows/run-suite.yml # zizmor: ignore[self-repository]
+    with:
+      base-url: ${{ needs.qa-config.outputs.url }}
+      tags: "@qa and not @wip"
+      tests-ref: ${{ github.sha }}
+      report-name: api-tests-qa
