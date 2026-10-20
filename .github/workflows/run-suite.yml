@@ -88,6 +88,20 @@ jobs:
             failures=$(grep -o 'failures="[0-9]*"' "$report" | head -1 | tr -dc 0-9)
             skipped=$(grep -o 'skipped="[0-9]*"' "$report" | head -1 | tr -dc 0-9)
             echo "### API acceptance: ${tests:-0} scenarios, ${failures:-0} failed, ${skipped:-0} skipped (${TAGS} → ${API_BASE_URL})" >> "$GITHUB_STEP_SUMMARY"
+            # One annotation per failing scenario (first 25), readable without downloading the report.
+            python3 - "$report" <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          cases = ET.parse(sys.argv[1]).getroot().iter("testcase")
+          shown = 0
+          for case in cases:
+              for bad in list(case.findall("failure")) + list(case.findall("error")):
+                  if shown >= 25:
+                      break
+                  text = (bad.get("message") or bad.text or "").strip().replace("\n", " ")[:600]
+                  name = (case.get("classname", "") + " :: " + case.get("name", "")).replace("::", "-").replace(",", ";")
+                  print(f"::error title={name[:180]}::{text}")
+                  shown += 1
+          PY
           fi
 
       - name: Upload the Cucumber report
