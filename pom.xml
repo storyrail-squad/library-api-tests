@@ -14,11 +14,11 @@
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <cucumber.version>7.20.1</cucumber.version>
-    <junit.version>5.11.4</junit.version>
-    <rest-assured.version>5.5.0</rest-assured.version>
-    <jackson.version>2.18.2</jackson.version>
-    <assertj.version>3.26.3</assertj.version>
+    <cucumber.version>7.34.9</cucumber.version>
+    <junit.version>5.14.4</junit.version>
+    <rest-assured.version>5.5.7</rest-assured.version>
+    <jackson.version>2.22.4</jackson.version>
+    <assertj.version>3.27.7</assertj.version>
     <!-- Overridden from the command line: -Dapi.baseUrl=… -Dcucumber.filter.tags=… -->
     <api.baseUrl>http://localhost:8080</api.baseUrl>
     <cucumber.filter.tags>not @wip</cucumber.filter.tags>
@@ -100,7 +100,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.13.0</version>
+        <version>3.16.0</version>
         <configuration>
           <compilerArgs>
             <!-- Zero-warning policy, like the frontend's ESLint -max-warnings 0. -->
@@ -112,7 +112,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
-        <version>3.5.2</version>
+        <version>3.6.1</version>
         <configuration>
           <includes>
             <include>**/RunCucumberTest.java</include>
